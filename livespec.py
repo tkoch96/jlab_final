@@ -14,7 +14,7 @@ fstop = 2495 * 10**6
 BW = fstop-fstart
 rr = c/(2*BW)
 max_range = rr*N/2
-ZOOM_IN = 14
+ZOOM_IN = 20
 
 fc = 2495 * 10**6
 
@@ -53,13 +53,14 @@ class SpectrogramWidget(pg.PlotWidget):
 
 		# bipolar colormap
 		pos = np.array([0., 1., 0.5, 0.25, 0.75])
+		#cyan - very low, dark blue - low, black - middle, red -high, yellow - very high
 		color = np.array([[0,255,255,255], [255,255,0,255], [0,0,0,255], (0, 0, 255, 255), (255, 0, 0, 255)], dtype=np.ubyte)
 		cmap = pg.ColorMap(pos, color)
 		lut = cmap.getLookupTable(0.0, 1.0, 256)
 
 		# set colormap
 		self.img.setLookupTable(lut)
-		self.img.setLevels([-30,0])
+		self.img.setLevels([100,150])
 
 		#get max velocity
 		delta_f = np.linspace(0,FS/2, 2*N)
@@ -105,7 +106,6 @@ class SpectrogramWidget(pg.PlotWidget):
 		v = np.fft.fft(data,zpad)
 		v = 20 * np.log10(np.abs(v))
 		v = v[0:int(len(v)/2)]
-		mmax = np.max(v)
 
 		v = v[0:int(np.floor(len(v)/ZOOM_IN))]
 		mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)
@@ -113,7 +113,7 @@ class SpectrogramWidget(pg.PlotWidget):
 
 		# roll down one and replace leading edge with new data
 		self.img_array = np.roll(self.img_array, -1, 0)
-		self.img_array[-1:] = v-mmax
+		self.img_array[-1:] = v
 
 		self.img.setImage(self.img_array, autoLevels=False)
 
