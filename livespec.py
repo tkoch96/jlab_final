@@ -19,6 +19,7 @@ ZOOM_IN = 14
 fc = 2495 * 10**6
 
 
+
 class MicrophoneRecorder():
 	def __init__(self, signal):
 		self.signal = signal
@@ -28,6 +29,7 @@ class MicrophoneRecorder():
 							rate=FS,
 							input=True,
 							frames_per_buffer=CHUNKSZ)
+		self.real_time_plot = pg.plot()
 	
 	def read(self):
 		data = self.stream.read(CHUNKSZ)
@@ -57,7 +59,7 @@ class SpectrogramWidget(pg.PlotWidget):
 
 		# set colormap
 		self.img.setLookupTable(lut)
-		self.img.setLevels([-20,0])
+		self.img.setLevels([-30,0])
 
 		#get max velocity
 		delta_f = np.linspace(0,FS/2, 2*N)
@@ -94,23 +96,24 @@ class SpectrogramWidget(pg.PlotWidget):
 		# spec = spec[0:int(len(spec)/10)]
 
 		data = chunk[0:-1:2]
+
 		data = data - np.mean(data)
+		
 		zpad = 4 * N
-		#pyplot.plot(data)
-		#pyplot.show()
 
-		v = 20 * np.log10(np.abs(np.fft.ifft(data,zpad)))
 
+		v = np.fft.fft(data,zpad)
+		v = 20 * np.log10(np.abs(v))
 		v = v[0:int(len(v)/2)]
-
-
 		mmax = np.max(v)
-			
+
 		v = v[0:int(np.floor(len(v)/ZOOM_IN))]
+		mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)
+		pg.QtGui.QApplication.processEvents()
+
 		# roll down one and replace leading edge with new data
 		self.img_array = np.roll(self.img_array, -1, 0)
 		self.img_array[-1:] = v-mmax
-
 
 		self.img.setImage(self.img_array, autoLevels=False)
 
