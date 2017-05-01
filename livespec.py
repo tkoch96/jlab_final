@@ -110,6 +110,8 @@ class SpectrogramWidget(pg.PlotWidget):
 		v = v[0:int(np.floor(len(v)/ZOOM_IN))]
 		mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)
 		pg.QtGui.QApplication.processEvents()
+		#pyplot.plot(data)
+		#pyplot.show()
 
 		# roll down one and replace leading edge with new data
 		self.img_array = np.roll(self.img_array, -1, 0)
