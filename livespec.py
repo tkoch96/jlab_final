@@ -116,6 +116,7 @@ class SpectrogramWidget(pg.PlotWidget):
 		# roll down one and replace leading edge with new data
 		self.img_array = np.roll(self.img_array, -1, 0)
 		self.img_array[-1:] = v
+		print(self.img_array)
 
 		self.img.setImage(self.img_array, autoLevels=False)
 
