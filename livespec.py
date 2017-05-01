@@ -49,7 +49,7 @@ class SpectrogramWidget(pg.PlotWidget):
 		self.img = pg.ImageItem()
 		self.addItem(self.img)
 
-		self.img_array = np.zeros((200, int(np.floor(CHUNKSZ*2)/ZOOM_IN)))
+		self.img_array = np.zeros((200, np.int(2*CHUNKSZ / ZOOM_IN)))
 
 		# bipolar colormap
 		pos = np.array([0., 1., 0.5, 0.25, 0.75])
@@ -60,7 +60,7 @@ class SpectrogramWidget(pg.PlotWidget):
 
 		# set colormap
 		self.img.setLookupTable(lut)
-		self.img.setLevels([100,150])
+		self.img.setLevels([30,90])
 
 		#get max velocity
 		delta_f = np.linspace(0,FS/2, 2*N)
@@ -79,23 +79,22 @@ class SpectrogramWidget(pg.PlotWidget):
 		self.show()
 
 	def update(self, chunk):
-		# normalized, windowed frequencies in data chunk
+		#normalized, windowed frequencies in data chunk
 		# trigger = chunk[1:CHUNKSZ:2]
 		# data = chunk[0:CHUNKSZ:2]
 		# thresholds = trigger > 0
 		# pulses = np.zeros(CHUNKSZ)
 		# for i in np.arange(100,len(trigger)-N):
-		# 	#look for pulse being sent
-		# 	if trigger[i] == 1 & int(np.mean(trigger[i-11:i-1] == 0)):
-		# 		pulses = data[i:i+N]
-		# 		break
+		 	#look for pulse being sent
+		#  	if trigger[i] == 1 & int(np.mean(trigger[i-11:i-1] == 0)):
+        #                         pulses = data[i:i+N]
+        #                         break
 		# pyplot.plot(data)
-		# pyplot.show()
-		# spec = np.fft.rfft(pulses,CHUNKSZ) / CHUNKSZ #compute fft
+		#pyplot.show()
+		# spec = np.fft.rfft(pulses,CHUNKSZ) #compute fft
 		# spec = spec[0:int(len(spec)/2)] #only half
-		
-		# spec = spec[0:int(len(spec)/10)]
-
+		# spec = 20*np.log10(spec)
+		# spec = spec[0:int(len(spec)/ZOOM_IN)]
 		data = chunk[0:-1:2]
 
 		data = data - np.mean(data)
@@ -108,16 +107,18 @@ class SpectrogramWidget(pg.PlotWidget):
 		v = v[0:int(len(v)/2)]
 
 		v = v[0:int(np.floor(len(v)/ZOOM_IN))]
-		mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)
+		# mic.real_time_plot.plot(np.arange(len(trigger)),data,clear=True)
 		pg.QtGui.QApplication.processEvents()
 		#pyplot.plot(data)
 		#pyplot.show()
 
 		# roll down one and replace leading edge with new data
+		# mmax = np.max(spec)
 		self.img_array = np.roll(self.img_array, -1, 0)
 		self.img_array[-1:] = v
-		print(self.img_array)
-
+		
+		# self.img_array[-1:] = spec-mmax
+		print(self.img_array[0:10])
 		self.img.setImage(self.img_array, autoLevels=False)
 
 if __name__ == '__main__':
