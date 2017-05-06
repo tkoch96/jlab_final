@@ -4,9 +4,13 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt4 import QtCore, QtGui
 from matplotlib import pyplot
+import sys
 
-mode = 'range' #range or doppler
-PC = False #pulse cancelling for doppler
+
+mode = sys.argv[2] #range or doppler
+PC = True #pulse cancelling for range
+
+card_index = int(sys.argv[1])
 
 FS = 44100 
 tp = 0.04
@@ -14,7 +18,7 @@ c = 3 * 10**8
 N = int(FS * tp)
 FACTOR = 2
 MAX_COUNTER = 4
-if mode == 'Doppler':
+if mode == 'doppler':
 	FACTOR = 1
 CHUNKSZ = FACTOR * N
 ZOOM_IN = 25 # we want to view the lower frequencies
@@ -29,8 +33,8 @@ fmax = 2536 * 10 ** 6
 vmin = 0.5
 vmax = 5
 sens = (fmax-fmin)/(vmax-vmin);
-vstart = 0.788
-vend = 3.17
+vstart = 0.788 #triangle wave min
+vend = 3.17 #triangle wave max
 fc = 2530 * 10**6
 lambduh = c / fc
 
@@ -38,16 +42,19 @@ fstart = vstart*sens
 fstop = vend*sens
 BW = fstop - fstart 
 
-COLOR_LOW = 40
-COLOR_HIGH = 90
 
+#Image quality is highly dependent on good choice of these numbers
+#doppler colors
+COLOR_LOW = 50
+COLOR_HIGH = 100
+#range colors
 if mode == 'range':
 	if PC == True:
-		COLOR_LOW = -30
-		COLOR_HIGH = 35
+		COLOR_LOW = -40
+		COLOR_HIGH = -10
 	else:
-		COLOR_LOW = 35
-		COLOR_HIGH = 50
+		COLOR_LOW = -25
+		COLOR_HIGH = 15
 	
 
 # card_index = 0
@@ -61,18 +68,19 @@ class MicrophoneRecorder():
 		# rate : 44.1 kHz
 		# number of channels : 2
 		self.signal = signal
-		self.stream = aa.PCM(aa.PCM_CAPTURE, aa.PCM_NORMAL,cardindex = 2)
+		self.stream = aa.PCM(aa.PCM_CAPTURE, aa.PCM_NORMAL,cardindex = card_index)
 		self.stream.setchannels(2)
 		self.stream.setrate(FS)
 		self.stream.setformat(aa.PCM_FORMAT_S16_LE)
 		if (mode == 'range'):
 			self.stream.setperiodsize(2000)
 		else:
-			self.stream.setperiodsize(CHUNKSZ) #236 + N max
-		print("I am listening to" + self.stream.cardname())
-		self.real_time_plot = pg.plot()
-		self.real_freq_plot = pg.plot()
-		self.real_extra_plot = pg.plot()
+			self.stream.setperiodsize(CHUNKSZ)
+
+		#Init plots
+		self.real_time_plot = pg.plot(title="Radar Signal")
+		self.real_freq_plot = pg.plot(title="Radar Spectrum")
+		self.real_extra_plot = pg.plot(title="Trigger")
 
 		self.real_time_plot.setRange(yRange=(-32000,32000))
 		self.real_extra_plot.setRange(yRange=(-32000,32000))
@@ -92,7 +100,11 @@ class SpectrogramWidget(pg.PlotWidget):
 	read_collected = QtCore.pyqtSignal(np.ndarray)
 	def __init__(self):
 		super(SpectrogramWidget, self).__init__()
-		self.img = pg.ImageItem()
+		if mode == 'range':
+			title = 'Range vs Time'
+		else:
+			title = 'Velocity vs Time'
+		self.img = pg.ImageItem(title=title)
 		self.addItem(self.img)
 		self.img_array = np.zeros((WIDTH_IM, HEIGHT_IM))
 		self.counter = 0
@@ -120,35 +132,29 @@ class SpectrogramWidget(pg.PlotWidget):
 			velocity = delta_f * lambduh/2
 			yscale = 1.0 / (self.img_array.shape[1]/velocity[-1])
 		else:
-			rr = c * 2 / BW
+			rr = c / 2 / BW
 			max_range = rr * N / 2				
 			yscale = 1.0 / (self.img_array.shape[1]/max_range)
 		yscale = yscale / ZOOM_IN
 		self.img.scale((1./FS)*N, yscale)
+		self.setLabel('bottom', 'Time')
 		if mode == 'doppler':
+			self.setTitle('Doppler Radar')
 			self.setLabel('left', 'Velocity', units='m/s')
 		else:
+			self.setTitle('Range Time Indicator')
 			self.setLabel('left', 'Range', units='m')
 
 		self.show()
 
 	def updateDoppler(self, chunk):
-		data = chunk[1:-1:2]
+		data = chunk[0:-1:2]
 		data = np.append(data,0)
 		data = data - np.mean(data)
-		data = data / 1000
-		#data_delay = np.append(data[1:],[0])
-		#data = data - data_delay
-		#data_delay = np.append(data[1:],[0])
-		#data = data - data_delay		
 		zpad = FFT_SIZE
-		# win_black = np.blackman(int(CHUNKSZ/2))
-		# data = data*win_black #window it
 	
 		v = np.fft.fft(data * np.blackman(len(data)),zpad)
-		# v_c = v / np.amax(v) #normalize
 		v_c = v
-		mic.last_tick = v
 		
 		v_c = 20 * np.log10(np.abs(v_c))
 		v_c = v_c[0:int(len(v_c)/2)]
@@ -166,9 +172,9 @@ class SpectrogramWidget(pg.PlotWidget):
 		self.counter += 1
 		self.chunklist = np.concatenate((self.chunklist,chunk))
 		# print("Size of chunklist: %d" %(len(self.chunklist)))
-		if (self.counter == 2):	
-			data = self.chunklist[1:-1:2]
-			trig = self.chunklist[0:-1:2]
+		if (self.counter >= 2):	
+			data = self.chunklist[0:-1:2]
+			trig = self.chunklist[1:-1:2]
 			start = [el > 0 for el in trig]
 			sif = []
 			thresh = 0
@@ -179,8 +185,7 @@ class SpectrogramWidget(pg.PlotWidget):
 			if (len(sif) == 0):
 				return
 			if PC == True: #pulse canceller
-				sif_delayed = sif[1:]
-				sif = sif_delayed - sif[0:len(sif)-1]
+				sif = np.convolve(sif,[-1,1])
 			ave = np.mean(sif)
 			sif = np.array(sif) - ave
 			zpad = FFT_SIZE
