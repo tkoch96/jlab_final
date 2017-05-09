@@ -6,6 +6,7 @@ from PyQt4 import QtCore, QtGui
 from matplotlib import pyplot
 import sys
 
+np.set_printoptions(threshold=np.nan)
 
 mode = sys.argv[2] #range or doppler
 PC = True #pulse cancelling for range
@@ -13,7 +14,7 @@ PC = True #pulse cancelling for range
 card_index = int(sys.argv[1])
 
 FS = 44100 
-tp = 0.04
+tp = 0.02
 c = 3 * 10**8
 N = int(FS * tp)
 FACTOR = 2
@@ -25,7 +26,7 @@ ZOOM_IN = 25 # we want to view the lower frequencies
 
 
 FFT_SIZE = 4 * CHUNKSZ
-WIDTH_IM = 200
+WIDTH_IM = 800
 HEIGHT_IM = int(FFT_SIZE / 2 / ZOOM_IN)
 
 fmin = 2315 * 10 ** 6
@@ -44,17 +45,10 @@ BW = fstop - fstart
 
 
 #Image quality is highly dependent on good choice of these numbers
-#doppler colors
-COLOR_LOW = 50
-COLOR_HIGH = 100
-#range colors
-if mode == 'range':
-	if PC == True:
-		COLOR_LOW = -40
-		COLOR_HIGH = -10
-	else:
-		COLOR_LOW = -25
-		COLOR_HIGH = 15
+
+nc_decrease_max = float(sys.argv[3])
+COLOR_HIGH = 0
+COLOR_LOW = -50
 	
 
 # card_index = 0
@@ -75,14 +69,19 @@ class MicrophoneRecorder():
 		if (mode == 'range'):
 			self.stream.setperiodsize(2000)
 		else:
-			self.stream.setperiodsize(CHUNKSZ)
+			self.stream.setperiodsize(int(CHUNKSZ/2))
+		self.sif_last_time = np.zeros(N-1)
 
+		self.total_max = 0
 		#Init plots
 		self.real_time_plot = pg.plot(title="Radar Signal")
 		self.real_freq_plot = pg.plot(title="Radar Spectrum")
 		self.real_extra_plot = pg.plot(title="Trigger")
-
-		self.real_time_plot.setRange(yRange=(-32000,32000))
+		
+		if mode == 'range':
+			self.real_time_plot.setRange(yRange=(-32000,32000))
+		else:
+			self.real_time_plot.setRange(yRange=(-1000,1000))
 		self.real_extra_plot.setRange(yRange=(-32000,32000))
 		self.real_freq_plot.setRange(yRange=(-50,100))
 
@@ -148,30 +147,40 @@ class SpectrogramWidget(pg.PlotWidget):
 		self.show()
 
 	def updateDoppler(self, chunk):
-		data = chunk[0:-1:2]
-		data = np.append(data,0)
-		data = data - np.mean(data)
-		zpad = FFT_SIZE
+			
+		self.counter  += 1
+		self.chunklist = np.concatenate((self.chunklist,chunk))
+		if (self.counter >= 2):
+			data = chunk[0:-1:2]
+			trig = chunk[1:-1:2]
+			zpad = FFT_SIZE
 	
-		v = np.fft.fft(data * np.blackman(len(data)),zpad)
-		v_c = v
+			v = np.fft.fft(data,zpad)
+			v_c = v
 		
-		v_c = 20 * np.log10(np.abs(v_c))
-		v_c = v_c[0:int(len(v_c)/2)]
-		v_c = v_c[0:int(len(v_c)/ZOOM_IN)]
-		
-		mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)	
-		mic.real_freq_plot.plot(np.arange(len(v_c)),v_c,clear=True)
-		pg = QtGui.QApplication.processEvents()
-		self.img_array = np.roll(self.img_array, -1, 0)
-		self.img_array[-1:] = v_c		
-		self.img.setImage(self.img_array, autoLevels = False)
-	
+			v_c = 20 * np.log10(np.abs(v_c))
+			v_c = v_c[0:int(len(v_c)/2)]
+			v_c = v_c[0:int(len(v_c)/ZOOM_IN)]
+			
+			mmax = np.max(v_c)
+
+			if mmax > mic.total_max:
+				mic.total_max = mmax
+			else:
+				mic.total_max -= nc_decrease_max
+			mic.real_time_plot.plot(np.arange(len(data)),data,clear=True)	
+			mic.real_freq_plot.plot(np.arange(len(v_c)),v_c,clear=True)
+			mic.real_extra_plot.plot(np.arange(len(trig)),trig,clear=True)
+			pg = QtGui.QApplication.processEvents()
+			self.img_array = np.roll(self.img_array, -1, 0)
+			self.img_array[-1:] = v_c - mic.total_max		
+			self.img.setImage(self.img_array, autoLevels = False)
+			self.counter=  0
+			self.chunklist = []	
 	def updateRange(self, chunk):
 		# Processing data
 		self.counter += 1
 		self.chunklist = np.concatenate((self.chunklist,chunk))
-		# print("Size of chunklist: %d" %(len(self.chunklist)))
 		if (self.counter >= 2):	
 			data = self.chunklist[0:-1:2]
 			trig = self.chunklist[1:-1:2]
@@ -185,20 +194,27 @@ class SpectrogramWidget(pg.PlotWidget):
 			if (len(sif) == 0):
 				return
 			if PC == True: #pulse canceller
-				sif = np.convolve(sif,[-1,1])
+				sif = sif - mic.sif_last_time
+				mic.sif_last_time = sif + mic.sif_last_time
 			ave = np.mean(sif)
-			sif = np.array(sif) - ave
+			sif = np.array(sif)
 			zpad = FFT_SIZE
 			# plotting
 			v = np.fft.ifft(sif, zpad)
 			v = 20*np.log10(np.abs(v))
 			S = v[0:(int)(len(v)/2/ZOOM_IN)]
+
+			mmax = np.max(S)
+			if mmax > mic.total_max:
+				mic.total_max = mmax
+			else: #decrease the max over time
+				mic.total_max -= nc_decrease_max
 			#Plot Signals
 			mic.real_freq_plot.plot(np.arange(len(S)),S,clear=True)
 			mic.real_extra_plot.plot(np.arange(len(trig)),trig,clear=True)
 			mic.real_time_plot.plot(np.arange(int(len(data)/2)),data[0:int(len(data)/2)],clear=True)
 			self.img_array = np.roll(self.img_array, -1, 0)
-			self.img_array[-1:] = S		
+			self.img_array[-1:] = S	- mic.total_max	
 			self.img.setImage(self.img_array, autoLevels = False)
 			self.chunklist = []
 			self.counter = 0
