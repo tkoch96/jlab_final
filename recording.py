@@ -48,7 +48,7 @@ BW = fstop - fstart
 
 nc_decrease_max = float(sys.argv[3])
 COLOR_HIGH = 0
-COLOR_LOW = -50
+COLOR_LOW = -30
 	
 
 # card_index = 0
@@ -132,6 +132,7 @@ class SpectrogramWidget(pg.PlotWidget):
 			yscale = 1.0 / (self.img_array.shape[1]/velocity[-1])
 		else:
 			rr = c / 2 / BW
+			print(rr)
 			max_range = rr * N / 2				
 			yscale = 1.0 / (self.img_array.shape[1]/max_range)
 		yscale = yscale / ZOOM_IN
@@ -181,6 +182,7 @@ class SpectrogramWidget(pg.PlotWidget):
 		# Processing data
 		self.counter += 1
 		self.chunklist = np.concatenate((self.chunklist,chunk))
+		
 		if (self.counter >= 2):	
 			data = self.chunklist[0:-1:2]
 			trig = self.chunklist[1:-1:2]
